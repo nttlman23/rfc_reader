@@ -1,0 +1,132 @@
+<!doctype html>
+<html lang="ru">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Random RFC</title>
+    <link rel="stylesheet" href="./style.css" />
+  </head>
+  <body>
+    <header class="topbar">
+      <div class="brand">
+        <div class="logo" aria-hidden="true">RFC</div>
+        <div>
+          <div class="title">Random RFC</div>
+          <div class="subtitle">
+            Случайная страница RFC с
+            <a href="https://www.rfc-editor.org/" target="_blank" rel="noreferrer">rfc-editor.org</a>
+          </div>
+        </div>
+      </div>
+
+      <div class="actions">
+        <div class="rfcSearch" role="search" aria-label="Поиск RFC по номеру">
+          <input
+            id="rfcSearchInput"
+            class="rfcSearchInput"
+            type="text"
+            inputmode="numeric"
+            autocomplete="off"
+            pattern="[0-9]*"
+            maxlength="4"
+            placeholder="RFC #"
+            aria-label="RFC номер"
+          />
+          <button id="rfcSearchBtn" class="btn" type="button">Открыть</button>
+        </div>
+        <button id="translateBtn" class="btn" type="button" aria-pressed="false">Перевести</button>
+        <button id="textSettingsBtn" class="btn" type="button" aria-expanded="false" aria-controls="textSettingsPanel">
+          Текст
+        </button>
+        <button id="nextBtn" class="btn primary" type="button">Следующий RFC</button>
+        <a id="openBtn" class="btn" href="#" target="_blank" rel="noreferrer" aria-disabled="true">Открыть в новой вкладке</a>
+      </div>
+    </header>
+
+    <main class="main">
+      <section class="status" aria-live="polite">
+        <div class="pill" id="statusPill">Готово</div>
+        <div class="meta">
+          <span class="label">Текущий:</span>
+          <a id="currentLink" href="#" target="_blank" rel="noreferrer">—</a>
+          <span class="sep">·</span>
+          <span class="label">Номер:</span>
+          <span id="currentNum">—</span>
+        </div>
+      </section>
+
+      <section id="textSettingsPanel" class="textSettings" hidden>
+        <h2 class="textSettingsTitle">Настройки текста</h2>
+        <div class="textSettingsGrid">
+          <label class="setting">
+            <span class="settingLabel">Размер шрифта</span>
+            <div class="settingControl">
+              <input id="fontSize" type="range" min="14" max="24" step="0.5" value="16.5" />
+              <output id="fontSizeVal" for="fontSize">16.5 px</output>
+            </div>
+          </label>
+          <label class="setting">
+            <span class="settingLabel">Межстрочный интервал</span>
+            <div class="settingControl">
+              <input id="lineHeight" type="range" min="1.4" max="2.2" step="0.05" value="1.72" />
+              <output id="lineHeightVal" for="lineHeight">1.72</output>
+            </div>
+          </label>
+          <label class="setting">
+            <span class="settingLabel">Шрифт</span>
+            <select id="fontFamily" class="settingSelect">
+              <option value="system">Системный</option>
+              <option value="serif">С засечками</option>
+              <option value="mono">Моноширинный</option>
+            </select>
+          </label>
+          <label class="setting">
+            <span class="settingLabel">Выравнивание</span>
+            <select id="textAlign" class="settingSelect">
+              <option value="justify">По ширине</option>
+              <option value="left">Слева</option>
+            </select>
+          </label>
+          <label class="setting">
+            <span class="settingLabel">Тема</span>
+            <select id="rfcTheme" class="settingSelect">
+              <option value="light">Светлая</option>
+              <option value="dark" selected>Тёмная</option>
+            </select>
+          </label>
+          <label class="setting">
+            <span class="settingLabel">Ширина колонки</span>
+            <select id="maxWidth" class="settingSelect">
+              <option value="100%">На всю ширину</option>
+              <option value="900px">Узкая (900px)</option>
+              <option value="1100px">Средняя (1100px)</option>
+              <option value="1400px">Широкая (1400px)</option>
+            </select>
+          </label>
+          <label class="setting">
+            <span class="settingLabel">Отступ между абзацами</span>
+            <div class="settingControl">
+              <input id="paraGap" type="range" min="8" max="28" step="1" value="12" />
+              <output id="paraGapVal" for="paraGap">12 px</output>
+            </div>
+          </label>
+        </div>
+        <button id="resetTextSettings" class="btn" type="button">Сбросить</button>
+      </section>
+
+      <section class="viewer">
+        <div id="rfcContainer" class="rfcContainer" aria-live="polite"></div>
+        <iframe
+          id="rfcFrame"
+          class="rfcIframe"
+          title="RFC Viewer"
+          referrerpolicy="no-referrer"
+          sandbox="allow-same-origin allow-forms allow-scripts allow-popups"
+          hidden
+        ></iframe>
+      </section>
+    </main>
+
+    <script src="./app.js" defer></script>
+  </body>
+</html>
