@@ -609,9 +609,29 @@ a:hover {
   border-radius: 12px;
 }
 
+.btnLabelShort {
+  display: none;
+}
+
 @media (max-width: 960px) {
   .topbar {
     flex-wrap: wrap;
+    align-items: stretch;
+    gap: 12px;
+  }
+
+  .brand {
+    min-width: 0;
+    flex: 1 1 auto;
+  }
+
+  .actions {
+    order: 2;
+    flex: 1 1 100%;
+    width: 100%;
+    max-width: 100%;
+    flex-shrink: 1;
+    justify-content: flex-start;
   }
 
   .topbar .status {
@@ -625,9 +645,53 @@ a:hover {
 }
 
 @media (max-width: 720px) {
+  .topbar {
+    padding: 12px 14px;
+    gap: 10px;
+  }
+
+  .brand {
+    flex: 1 1 100%;
+  }
+
+  .actions {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
+  }
+
+  .rfcSearch {
+    grid-column: 1 / -1;
+    width: 100%;
+  }
+
+  .rfcSearchInput {
+    flex: 1;
+    width: auto;
+    min-width: 0;
+  }
+
+  #nextBtn,
+  .btn-openTab {
+    grid-column: 1 / -1;
+  }
+
+  .btn {
+    padding: 9px 10px;
+    font-size: 13px;
+  }
+
+  .btnLabelFull {
+    display: none;
+  }
+
+  .btnLabelShort {
+    display: inline;
+  }
+
   .main {
     height: auto;
-    min-height: calc(100vh - 120px);
+    min-height: calc(100vh - 160px);
   }
 
   .topbar .status {
@@ -635,9 +699,15 @@ a:hover {
     flex-direction: column;
     gap: 8px;
   }
+
+  .meta {
+    justify-content: flex-start;
+  }
+
   .rfcIframe {
     min-height: 70vh;
   }
+
   .rfcContainer {
     min-height: 70vh;
   }
