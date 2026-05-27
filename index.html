@@ -21,6 +21,17 @@
         </div>
       </div>
 
+      <section class="status" aria-live="polite">
+        <div class="pill" id="statusPill">Готово</div>
+        <div class="meta">
+          <span class="label">Текущий:</span>
+          <a id="currentLink" href="#" target="_blank" rel="noreferrer">—</a>
+          <span class="sep">·</span>
+          <span class="label">Номер:</span>
+          <span id="currentNum">—</span>
+        </div>
+      </section>
+
       <div class="actions">
         <div class="rfcSearch" role="search" aria-label="Поиск RFC по номеру">
           <input
@@ -46,17 +57,6 @@
     </header>
 
     <main class="main">
-      <section class="status" aria-live="polite">
-        <div class="pill" id="statusPill">Готово</div>
-        <div class="meta">
-          <span class="label">Текущий:</span>
-          <a id="currentLink" href="#" target="_blank" rel="noreferrer">—</a>
-          <span class="sep">·</span>
-          <span class="label">Номер:</span>
-          <span id="currentNum">—</span>
-        </div>
-      </section>
-
       <section id="textSettingsPanel" class="textSettings" hidden>
         <h2 class="textSettingsTitle">Настройки текста</h2>
         <div class="textSettingsGrid">

@@ -49,7 +49,7 @@ a:hover {
   align-items: center;
   justify-content: space-between;
   gap: 16px;
-  padding: 18px 18px;
+  padding: 14px 18px;
   position: sticky;
   top: 0;
   z-index: 5;
@@ -62,7 +62,18 @@ a:hover {
   display: flex;
   align-items: center;
   gap: 12px;
-  min-width: 260px;
+  min-width: 200px;
+  flex-shrink: 0;
+}
+
+.topbar .status {
+  flex: 1 1 auto;
+  min-width: 0;
+  justify-content: center;
+  padding: 0 10px;
+  background: transparent;
+  border: none;
+  box-shadow: none;
 }
 
 .logo {
@@ -96,6 +107,7 @@ a:hover {
   gap: 10px;
   flex-wrap: wrap;
   justify-content: flex-end;
+  flex-shrink: 0;
 }
 
 .rfcSearch {
@@ -193,7 +205,7 @@ a:hover {
   display: flex;
   flex-direction: column;
   gap: 14px;
-  height: calc(100vh - 78px);
+  height: calc(100vh - 76px);
   min-height: 0;
 }
 
@@ -206,7 +218,6 @@ a:hover {
   border-radius: var(--radius);
   background: var(--panel);
   border: 1px solid rgba(255, 255, 255, 0.09);
-  box-shadow: var(--shadow);
 }
 
 .pill {
@@ -425,9 +436,10 @@ a:hover {
   border: 1px solid var(--rfc-pre-border, rgba(2, 6, 23, 0.12));
   border-radius: 12px;
   padding: 12px 14px;
-  white-space: pre-wrap;
-  overflow-wrap: anywhere;
-  word-break: break-word;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+  font-size: 0.95em;
+  white-space: pre;
+  overflow: auto;
 }
 
 .rfcContainer code {
@@ -567,13 +579,13 @@ a:hover {
 
 .rfcContainer th,
 .rfcContainer td {
-  border: 1px solid rgba(0, 0, 0, 0.12);
+  border: 1px solid var(--rfc-table-border, rgba(0, 0, 0, 0.12));
   padding: 8px 10px;
   vertical-align: top;
 }
 
 .rfcContainer th {
-  background: rgba(0, 0, 0, 0.03);
+  background: var(--rfc-table-header-bg, rgba(0, 0, 0, 0.03));
   text-align: left;
 }
 
@@ -582,12 +594,7 @@ a:hover {
   font-size: 0.95em;
 }
 
-.rfcContainer pre {
-  overflow: auto;
-  padding: 12px 14px;
-  border-radius: 12px;
-  background: rgba(0, 0, 0, 0.05);
-}
+/* (pre styling is defined выше вместе с темизацией) */
 
 .rfcContainer ul,
 .rfcContainer ol {
@@ -602,14 +609,31 @@ a:hover {
   border-radius: 12px;
 }
 
+@media (max-width: 960px) {
+  .topbar {
+    flex-wrap: wrap;
+  }
+
+  .topbar .status {
+    order: 3;
+    flex: 1 1 100%;
+    justify-content: space-between;
+    padding: 4px 0 0;
+    border-top: 1px solid rgba(255, 255, 255, 0.08);
+    padding-top: 10px;
+  }
+}
+
 @media (max-width: 720px) {
   .main {
     height: auto;
-    min-height: calc(100vh - 78px);
+    min-height: calc(100vh - 120px);
   }
-  .status {
+
+  .topbar .status {
     align-items: flex-start;
     flex-direction: column;
+    gap: 8px;
   }
   .rfcIframe {
     min-height: 70vh;

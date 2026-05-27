@@ -142,6 +142,8 @@ function applyTextSettings(settings) {
     rfcContainer.style.setProperty("--rfc-code-bg", "rgba(255, 255, 255, 0.08)");
     rfcContainer.style.setProperty("--rfc-code-border", "rgba(255, 255, 255, 0.14)");
     rfcContainer.style.setProperty("--rfc-selection", "rgba(147, 197, 253, 0.25)");
+    rfcContainer.style.setProperty("--rfc-table-border", "rgba(255, 255, 255, 0.14)");
+    rfcContainer.style.setProperty("--rfc-table-header-bg", "rgba(255, 255, 255, 0.05)");
   } else {
     rfcContainer.style.setProperty("--rfc-bg", "rgba(255, 255, 255, 0.96)");
     rfcContainer.style.setProperty("--rfc-fg", "rgba(0, 0, 0, 0.88)");
@@ -152,6 +154,8 @@ function applyTextSettings(settings) {
     rfcContainer.style.setProperty("--rfc-code-bg", "rgba(2, 6, 23, 0.06)");
     rfcContainer.style.setProperty("--rfc-code-border", "rgba(2, 6, 23, 0.1)");
     rfcContainer.style.setProperty("--rfc-selection", "rgba(124, 92, 255, 0.25)");
+    rfcContainer.style.setProperty("--rfc-table-border", "rgba(0, 0, 0, 0.14)");
+    rfcContainer.style.setProperty("--rfc-table-header-bg", "rgba(0, 0, 0, 0.03)");
   }
 
   if (settings.maxWidth === "100%") {
@@ -226,6 +230,58 @@ async function renderRFCViaFetch(url) {
   if (!res.ok) throw new Error(`HTTP ${res.status}`);
 
   const body = await res.text();
+
+  function cleanupEmptyBlocks(root) {
+    // Remove elements that render as empty rounded boxes in our CSS.
+    // We keep normal paragraphs/headings; target only elements that typically have
+    // backgrounds/borders (pre/blockquote) plus truly empty containers.
+    // Includes: whitespace, NBSP, zero-width, bidi marks, word-joiner, direction controls.
+    const stripInvisible = (s) =>
+      s.replace(/[\s\u00a0\u200B-\u200F\u202A-\u202E\u2060\uFEFF]+/g, "");
+
+    // TOC container with no entries can remain as an empty rounded box.
+    root.querySelectorAll(".rfc-toc").forEach((toc) => {
+      if (!toc.querySelector("li")) toc.remove();
+    });
+
+    root.querySelectorAll("pre, blockquote, div, p").forEach((el) => {
+      const tag = el.tagName.toLowerCase();
+      const raw = (el.textContent || "").replace(/\u00a0/g, " ");
+      const text = raw.trim();
+      if (!text) {
+        // Keep structural containers with children.
+        if (tag === "div" && el.children.length) return;
+        if (tag === "p") return;
+        el.remove();
+        return;
+      }
+
+      const compact = stripInvisible(text);
+      const hasAlnum = /[A-Za-z0-9]/.test(text);
+
+      // Remove tiny / nearly-empty code boxes that look like empty rounded rectangles.
+      if (tag === "pre") {
+        // Examples: blocks that are just a couple of punctuation chars or whitespace lines.
+        if (compact.length <= 6) {
+          el.remove();
+          return;
+        }
+        // If it contains no letters/digits, it is almost always a visual filler (lines/dots)
+        // that becomes a big empty box in our theme.
+        if (!hasAlnum) {
+          el.remove();
+          return;
+        }
+      }
+
+      if (tag === "blockquote") {
+        if (!hasAlnum && compact.length <= 20) {
+          el.remove();
+          return;
+        }
+      }
+    });
+  }
 
   // If we loaded a plain-text RFC (.txt), reflow it into paragraphs so it uses full width.
   if (!body.trim().startsWith("<")) {
@@ -314,17 +370,116 @@ async function renderRFCViaFetch(url) {
       return blockLines.length === 1 && isSectionHeadingLine(blockLines[0]);
     }
 
+    /** Questionnaire / form lines that are only dot or underscore leaders. */
+    function isFormFillLine(line) {
+      const t = line.trim();
+      if (!t) return true;
+      return /^[.\s_\-–—]+$/.test(t) && !/[A-Za-z0-9]/.test(t);
+    }
+
+    function isFormFillBlock(blockLines) {
+      return blockLines.every((l) => isFormFillLine(l));
+    }
+
+    /** RFC ASCII diagrams: +---+ rows, | col | rows, MSB/LSB labels, dashed borders. */
+    function isAsciiDiagramLine(line) {
+      const t = line.trim();
+      if (!t) return false;
+      if (/^[-–—_=+.\s]{6,}$/.test(t) && /-{3,}|_{3,}|={3,}/.test(t)) return true;
+      if (/^\|/.test(line) || /\|.*\|/.test(line)) return true;
+      if (/^(?:MSB|LSB)\b/.test(t) && t.length < 100) return true;
+      if (/^[/\\^|+\-.\s]{8,}$/.test(t) && /[|+\-\\/]{2,}/.test(t)) return true;
+      return false;
+    }
+
+    function isAsciiDiagramBlock(blockLines) {
+      if (!blockLines.length) return false;
+      const diagramLines = blockLines.filter((l) => isAsciiDiagramLine(l)).length;
+      if (diagramLines >= 2) return true;
+      if (diagramLines >= 1 && blockLines.some((l) => /-{5,}/.test(l)) && blockLines.some((l) => /\|/.test(l)))
+        return true;
+      return false;
+    }
+
+    /** MI-counting / binary list blocks (0, 01, 10, :, 11...1110). */
+    function isListLikeDiagramLine(line) {
+      const t = line.trim();
+      if (!t) return false;
+      if (/^:+$/.test(t)) return true;
+      if (/\(reserved to mean/i.test(t)) return true;
+      if (/^[01.]+$/.test(t.replace(/\s/g, ""))) return true;
+      if (/^[\d\s.:()+]+$/.test(t) && /[01]/.test(t) && t.length < 80) return true;
+      return false;
+    }
+
+    function isListLikeDiagramBlock(blockLines) {
+      if (blockLines.length < 2) return false;
+      const hits = blockLines.filter((l) => isListLikeDiagramLine(l)).length;
+      return hits >= 2 && hits >= Math.ceil(blockLines.length * 0.4);
+    }
+
+    function isContinuableDiagramBlock(blockLines) {
+      return isAsciiDiagramBlock(blockLines) || isListLikeDiagramBlock(blockLines);
+    }
+
+    /** Page footers, form feeds, and running "RFC NNNN ... Month YYYY" headers. */
+    function isPageBreakNoiseLine(line) {
+      const t = line.trim();
+      if (!t) return false;
+      if (/^\f/.test(line)) return true;
+      if (/\[page\s*\d+\]/i.test(t)) return true;
+      if (/^[A-Za-z].*\[Page\s*\d+\]/i.test(t) && t.length < 95) return true;
+      if (/Standards Track|Informational|Experimental|Historic|Best Current Practice/i.test(t) && t.length < 95)
+        return true;
+      if (/^RFC\s+\d{3,5}\s+/i.test(t) && t.length < 120) {
+        if (
+          /(January|February|March|April|May|June|July|August|September|October|November|December)\s+\d{4}/i.test(
+            t
+          )
+        )
+          return true;
+        if (!/^\d+\./.test(t)) return true;
+      }
+      return false;
+    }
+
     function looksLikeAsciiBlock(blockLines) {
       if (isTocBlock(blockLines)) return false;
+      if (isFormFillBlock(blockLines)) return false;
+      if (isAsciiDiagramBlock(blockLines)) return true;
+      if (isListLikeDiagramBlock(blockLines)) return true;
       if (blockLines.some((l) => isTocStartLine(l) || isTocLine(l))) return false;
       return blockLines.some((l) => {
         if (isTocLine(l)) return false;
-        const t = l.replace(/\s/g, "");
+        if (isFormFillLine(l)) return false;
+        const t = lineTrimCompact(l);
         if (!t) return false;
+        if (t.length <= 2 && /^[|+\-–—\\]+$/.test(t)) return false;
         const nonAlpha = t.replace(/[A-Za-z0-9]/g, "").length;
         const ratio = nonAlpha / t.length;
         return ratio > 0.55 || /-{5,}|={5,}|\+{3,}/.test(l);
       });
+    }
+
+    function lineTrimCompact(line) {
+      return line.replace(/\s/g, "");
+    }
+
+    function shouldRenderPreBlock(blockLines) {
+      if (!looksLikeAsciiBlock(blockLines)) return false;
+      const text = blockLines
+        .map((l) => l.replace(/\s+$/g, ""))
+        .join("\n")
+        .trim();
+      if (!text || isFormFillBlock(blockLines)) return false;
+      // Drop ASCII "filler" <pre> blocks that contain no real words/numbers.
+      // (These are often rendered as empty rounded boxes on dark theme.)
+      if (!/[A-Za-z0-9]/.test(text)) return false;
+      if (blockLines.length === 1) {
+        const t = blockLines[0].trim();
+        if (t.length <= 3 && /^[|+\-–—\\]+$/.test(t)) return false;
+      }
+      return true;
     }
 
     function normalizeParagraphLine(line) {
@@ -477,6 +632,7 @@ async function renderRFCViaFetch(url) {
     let tocUl = null;
     let tocPending = null;
     let paraBuf = [];
+    let pendingDiagramGap = false;
 
     function flushTocPending() {
       if (!tocPending || !tocPending.length) {
@@ -550,7 +706,9 @@ async function renderRFCViaFetch(url) {
         return;
       }
 
-      if (looksLikeAsciiBlock(b)) {
+      if (isFormFillBlock(b)) return;
+
+      if (shouldRenderPreBlock(b)) {
         const pre = document.createElement("pre");
         pre.textContent = b.join("\n");
         frag.appendChild(pre);
@@ -569,12 +727,26 @@ async function renderRFCViaFetch(url) {
     }
 
     for (const line of lines) {
-      if (/\[page\s*\d+\]/i.test(line)) continue;
+      if (isPageBreakNoiseLine(line)) continue;
 
       if (line.trim() === "") {
         if (inToc) endToc();
+        if (isContinuableDiagramBlock(paraBuf)) {
+          pendingDiagramGap = true;
+          continue;
+        }
+        pendingDiagramGap = false;
         flushParagraph();
         continue;
+      }
+
+      if (pendingDiagramGap) {
+        pendingDiagramGap = false;
+        if (isListLikeDiagramLine(line) || isAsciiDiagramLine(line)) {
+          paraBuf.push(line);
+          continue;
+        }
+        flushParagraph();
       }
 
       if (/^table of contents$/i.test(line.trim())) {
@@ -662,6 +834,7 @@ async function renderRFCViaFetch(url) {
 
     rfcContainer.innerHTML = "";
     rfcContainer.appendChild(wrapper);
+    cleanupEmptyBlocks(rfcContainer);
     return;
   }
 
@@ -704,11 +877,53 @@ async function renderRFCViaFetch(url) {
     }
   }
 
+  function isFormFillLine(line) {
+    const t = line.trim();
+    if (!t) return true;
+    return /^[.\s_\-–—]+$/.test(t) && !/[A-Za-z0-9]/.test(t);
+  }
+
+  function isFormFillBlock(lines) {
+    return lines.every((l) => isFormFillLine(l));
+  }
+
+  function isAsciiDiagramLine(line) {
+    const t = line.trim();
+    if (!t) return false;
+    if (/^[-–—_=+.\s]{6,}$/.test(t) && /-{3,}|_{3,}|={3,}/.test(t)) return true;
+    if (/^\|/.test(line) || /\|.*\|/.test(line)) return true;
+    if (/^(?:MSB|LSB)\b/.test(t) && t.length < 100) return true;
+    if (/^[/\\^|+\-.\s]{8,}$/.test(t) && /[|+\-\\/]{2,}/.test(t)) return true;
+    return false;
+  }
+
+  function isAsciiDiagramBlock(lines) {
+    if (!lines.length) return false;
+    const diagramLines = lines.filter((l) => isAsciiDiagramLine(l)).length;
+    if (diagramLines >= 2) return true;
+    if (diagramLines >= 1 && lines.some((l) => /-{5,}/.test(l)) && lines.some((l) => /\|/.test(l))) return true;
+    return false;
+  }
+
   function looksLikeAsciiBlock(lines) {
-    const sample = lines.slice(0, 40).join("\n");
-    const heavy = (sample.match(/[|+_=]{2,}|-{5,}|\*{5,}|\.{5,}/g) || []).length;
+    if (isFormFillBlock(lines)) return false;
+    if (isAsciiDiagramBlock(lines)) return true;
+    const sample = lines
+      .filter((l) => !isFormFillLine(l))
+      .slice(0, 40)
+      .join("\n");
+    if (!sample.trim()) return false;
+    const heavy = (sample.match(/[|+_=]{2,}|-{5,}|\*{5,}/g) || []).length;
     const manySpaces = (sample.match(/ {6,}/g) || []).length;
     return heavy >= 2 || manySpaces >= 6;
+  }
+
+  function shouldRenderPreBlock(lines) {
+    if (!looksLikeAsciiBlock(lines)) return false;
+    const text = lines.join("\n").trim();
+    if (!text || isFormFillBlock(lines)) return false;
+    if (!/[A-Za-z0-9]/.test(text)) return false;
+    return true;
   }
 
   function reflowPreToParagraphs(preEl) {
@@ -728,7 +943,9 @@ async function renderRFCViaFetch(url) {
 
     const frag = document.createDocumentFragment();
     for (const b of blocks) {
-      if (looksLikeAsciiBlock(b)) {
+      if (isFormFillBlock(b)) continue;
+
+      if (shouldRenderPreBlock(b)) {
         const pre = document.createElement("pre");
         pre.textContent = b.join("\n");
         frag.appendChild(pre);
@@ -802,6 +1019,37 @@ async function renderRFCViaFetch(url) {
 
   removeRfcEditorToolboxByText(clone);
 
+  // Remove empty/placeholder <pre> blocks that render as blank rounded boxes.
+  // (Some RFC HTML sources include visual form fillers as <pre> with no real text.)
+  clone.querySelectorAll("pre").forEach((pre) => {
+    const raw = pre.textContent || "";
+    const t = raw.trim();
+    if (!t) {
+      pre.remove();
+      return;
+    }
+
+    const compact = t.replace(/[\s\u00a0\u200B-\u200F\u202A-\u202E\u2060\uFEFF]+/g, "");
+    if (compact.length <= 6) {
+      pre.remove();
+      return;
+    }
+
+    // Remove <pre> fillers/diagrams without any alphanumerics.
+    // These are typically line/dot placeholders that appear as blank rounded boxes.
+    if (!/[A-Za-z0-9]/.test(t)) {
+      pre.remove();
+      return;
+    }
+
+    // Dot/line placeholders: only punctuation leaders without any alphanumerics.
+    // Keep typical ASCII diagrams that often contain `|` or `+`.
+    if (!/[A-Za-z0-9]/.test(t) && /^[.\s_\-–—:;]+$/.test(t)) {
+      pre.remove();
+      return;
+    }
+  });
+
   // If RFC content is essentially one big <pre>, reflow it into paragraphs.
   const pres = Array.from(clone.querySelectorAll("pre"));
   if (pres.length === 1) {
@@ -813,6 +1061,7 @@ async function renderRFCViaFetch(url) {
   // Keep markup; apply our own CSS for readability.
   rfcContainer.innerHTML = "";
   rfcContainer.appendChild(clone);
+  cleanupEmptyBlocks(rfcContainer);
 }
 
 async function urlExists(url) {
