@@ -232,31 +232,74 @@ async function renderRFCViaFetch(url) {
     const normalized = body.replace(/\r\n/g, "\n").replace(/\r/g, "\n");
     const lines = normalized.split("\n");
 
-    const SECTION_HEADING_RE = /^\s*(\d+(?:\.\d+)*|[A-Z])\.\s+(.+?)\s*$/;
-
     function sectionAnchorId(sectionNum) {
       return `sec-${String(sectionNum).replace(/\./g, "-")}`;
     }
 
     /**
-     * RFC TOC dot leaders come in two styles:
-     * - spaced: "Title . . . . 12"
-     * - contiguous: "Title................................ 12"
+     * RFC TOC dot leaders: spaced " . . . " or contiguous "...."
+     * Supports: "1. Title ... 4", "Appendix A. Title ... 13", "A.1. Title ... 14"
      */
     function parseTocLine(line) {
-      // Page number may be glued to dot leaders: "Title ..........3"
-      const m = line.match(/^\s*(\d+(?:\.\d+)*|[A-Z])\.\s+(.+?)(\d+)\s*$/);
+      const s = line.replace(/\s+/g, " ").trim();
+
+      let m = s.match(/^Appendix\s+([A-Z])\.\s+(.+?)(\d+)$/i);
+      if (m) {
+        const dotIdx = m[2].search(/(?:\s+\.){2,}|\.{3,}/);
+        if (dotIdx === -1) return null;
+        return {
+          num: m[1],
+          title: m[2].slice(0, dotIdx).trim(),
+          page: m[3],
+          displayNum: `Appendix ${m[1]}`,
+        };
+      }
+
+      m = s.match(/^((?:\d+(?:\.\d+)*)|(?:[A-Z](?:\.\d+)*))\.\s+(.+?)(\d+)$/);
       if (!m) return null;
-      const middle = m[2];
-      const dotIdx = middle.search(/(?:\s+\.){2,}|\.{3,}/);
+      const dotIdx = m[2].search(/(?:\s+\.){2,}|\.{3,}/);
       if (dotIdx === -1) return null;
-      const title = middle.slice(0, dotIdx).trim();
+      const title = m[2].slice(0, dotIdx).trim();
       if (!title) return null;
-      return { num: m[1], title, page: m[3] };
+      return { num: m[1], title, page: m[3], displayNum: m[1] };
     }
 
     function isTocLine(line) {
       return parseTocLine(line) !== null;
+    }
+
+    function isTocStartLine(line) {
+      return /^\s*(?:\d+(?:\.\d+)*\.|Appendix\s+[A-Z]\.|[A-Z](?:\.\d+)*\.)/i.test(line);
+    }
+
+    function isTocContinuationLine(line) {
+      const t = line.trim();
+      if (!t) return false;
+      if (isTocStartLine(line)) return false;
+      return /^\s{2,}\S/.test(line) || /\.{2,}\s*\d+\s*$/.test(line);
+    }
+
+    function parseSectionHeading(line) {
+      let m = line.match(/^\s*Appendix\s+([A-Z])\.\s+(.+?)\s*$/i);
+      if (m) {
+        if (/(?:\s+\.){2,}|\.{3,}/.test(m[2])) return null;
+        return { num: m[1], title: m[2].trim(), displayNum: `Appendix ${m[1]}` };
+      }
+      m = line.match(/^\s*((?:\d+(?:\.\d+)*)|(?:[A-Z](?:\.\d+)*))\.\s+(.+?)\s*$/);
+      if (!m) return null;
+      if (/(?:\s+\.){2,}|\.{3,}/.test(m[3])) return null;
+      if (m[3].trim().length > 120) return null;
+      return { num: m[1], title: m[3].trim(), displayNum: m[1] };
+    }
+
+    function isSectionHeadingLine(line) {
+      return parseSectionHeading(line) !== null;
+    }
+
+    function isBodySectionStart(line) {
+      if (isTocLine(line) || isTocStartLine(line) || isTocContinuationLine(line)) return false;
+      const h = parseSectionHeading(line);
+      return h !== null;
     }
 
     function isTocBlock(blockLines) {
@@ -267,21 +310,13 @@ async function renderRFCViaFetch(url) {
       return false;
     }
 
-    function isSectionHeadingLine(line) {
-      if (isTocLine(line)) return false;
-      const m = line.match(SECTION_HEADING_RE);
-      if (!m) return false;
-      if (/(?:\s+\.){2,}/.test(m[2])) return false;
-      if (m[2].trim().length > 120) return false;
-      return true;
-    }
-
     function isSectionHeadingBlock(blockLines) {
       return blockLines.length === 1 && isSectionHeadingLine(blockLines[0]);
     }
 
     function looksLikeAsciiBlock(blockLines) {
       if (isTocBlock(blockLines)) return false;
+      if (blockLines.some((l) => isTocStartLine(l) || isTocLine(l))) return false;
       return blockLines.some((l) => {
         if (isTocLine(l)) return false;
         const t = l.replace(/\s/g, "");
@@ -394,7 +429,8 @@ async function renderRFCViaFetch(url) {
 
       const a = document.createElement("a");
       a.href = `#${sectionAnchorId(parsed.num)}`;
-      a.textContent = `${parsed.num}. ${parsed.title}`;
+      const label = parsed.displayNum || parsed.num;
+      a.textContent = `${label}. ${parsed.title}`;
       li.appendChild(a);
 
       const pageEl = document.createElement("span");
@@ -423,17 +459,15 @@ async function renderRFCViaFetch(url) {
     }
 
     function renderSectionHeading(line, frag) {
-      const m = line.match(SECTION_HEADING_RE);
-      if (!m) return false;
-      const num = m[1];
-      const title = m[2].trim();
-      const depth = String(num).includes(".") ? String(num).split(".").length : 1;
+      const h = parseSectionHeading(line);
+      if (!h) return false;
+      const depth = String(h.num).includes(".") ? String(h.num).split(".").length : 1;
 
-      const h = document.createElement("h2");
-      h.id = sectionAnchorId(num);
-      h.className = `rfc-section rfc-section-level-${depth}`;
-      linkifyInto(h, `${num}. ${title}`);
-      frag.appendChild(h);
+      const el = document.createElement("h2");
+      el.id = sectionAnchorId(h.num);
+      el.className = `rfc-section rfc-section-level-${depth}`;
+      linkifyInto(el, `${h.displayNum}. ${h.title}`);
+      frag.appendChild(el);
       return true;
     }
 
@@ -441,7 +475,19 @@ async function renderRFCViaFetch(url) {
     let inToc = false;
     let tocDiv = null;
     let tocUl = null;
+    let tocPending = null;
     let paraBuf = [];
+
+    function flushTocPending() {
+      if (!tocPending || !tocPending.length) {
+        tocPending = null;
+        return;
+      }
+      const combined = tocPending.join(" ");
+      const parsed = parseTocLine(combined);
+      if (parsed) appendTocEntry(parsed, tocUl);
+      tocPending = null;
+    }
 
     function ensureToc() {
       if (!tocDiv) {
@@ -466,9 +512,34 @@ async function renderRFCViaFetch(url) {
 
       if (isTocBlock(b)) {
         ensureToc();
+        let pending = null;
         for (const line of b) {
-          const parsed = parseTocLine(line);
-          if (parsed) appendTocEntry(parsed, tocUl);
+          if (isTocStartLine(line)) {
+            if (pending) {
+              const p = parseTocLine(pending.join(" "));
+              if (p) appendTocEntry(p, tocUl);
+            }
+            pending = [line.trim()];
+            const p = parseTocLine(line);
+            if (p) {
+              appendTocEntry(p, tocUl);
+              pending = null;
+            }
+          } else if (pending) {
+            pending.push(line.trim());
+            const p = parseTocLine(pending.join(" "));
+            if (p) {
+              appendTocEntry(p, tocUl);
+              pending = null;
+            }
+          } else {
+            const p = parseTocLine(line);
+            if (p) appendTocEntry(p, tocUl);
+          }
+        }
+        if (pending) {
+          const p = parseTocLine(pending.join(" "));
+          if (p) appendTocEntry(p, tocUl);
         }
         endToc();
         return;
@@ -519,12 +590,34 @@ async function renderRFCViaFetch(url) {
       }
 
       if (inToc) {
-        const parsed = parseTocLine(line);
-        if (parsed) {
-          appendTocEntry(parsed, tocUl);
+        if (isBodySectionStart(line)) {
+          flushTocPending();
+          endToc();
+        } else if (isTocStartLine(line)) {
+          flushTocPending();
+          tocPending = [line.trim()];
+          const parsed = parseTocLine(line);
+          if (parsed) {
+            appendTocEntry(parsed, tocUl);
+            tocPending = null;
+          }
           continue;
+        } else if (tocPending && (isTocContinuationLine(line) || !parseTocLine(line))) {
+          tocPending.push(line.trim());
+          const parsed = parseTocLine(tocPending.join(" "));
+          if (parsed) {
+            appendTocEntry(parsed, tocUl);
+            tocPending = null;
+          }
+          continue;
+        } else {
+          const parsed = parseTocLine(line);
+          if (parsed) {
+            flushTocPending();
+            appendTocEntry(parsed, tocUl);
+            continue;
+          }
         }
-        endToc();
       }
 
       const parsedToc = parseTocLine(line);
@@ -532,6 +625,19 @@ async function renderRFCViaFetch(url) {
         flushParagraph();
         ensureToc();
         appendTocEntry(parsedToc, tocUl);
+        continue;
+      }
+
+      if (isTocStartLine(line)) {
+        flushParagraph();
+        inToc = true;
+        ensureToc();
+        tocPending = [line.trim()];
+        const p = parseTocLine(line);
+        if (p) {
+          appendTocEntry(p, tocUl);
+          tocPending = null;
+        }
         continue;
       }
 
@@ -544,7 +650,10 @@ async function renderRFCViaFetch(url) {
       paraBuf.push(line);
     }
 
-    if (inToc) endToc();
+    if (inToc) {
+      flushTocPending();
+      endToc();
+    }
     flushParagraph();
 
     const wrapper = document.createElement("div");
